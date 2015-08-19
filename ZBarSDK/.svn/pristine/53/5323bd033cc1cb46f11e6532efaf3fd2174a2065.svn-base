@@ -1,0 +1,26 @@
+//
+//  VideoQRForIpad2ViewController.h
+//  ibonAPP
+//
+//  Created by pic on 12/10/22.
+//
+//
+
+#import <UIKit/UIKit.h>
+#import "VideoQRViewController.h"
+#import "GPUImage.h"
+#import "ZBarSDK.h"
+
+@interface VideoQRForIpad2ViewController : UIViewController <GPUImageVideoCameraDelegate>
+{
+    GPUImageVideoCamera *videoCamera;
+    GPUImageFilterPipeline *pipeline;
+    
+    NSMutableArray *arrayTemp;
+    
+    NSTimer *timer;
+}
+
+@property (nonatomic, retain) VideoQRViewController *delegate;
+
+@end

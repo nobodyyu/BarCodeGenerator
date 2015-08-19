@@ -1,0 +1,233 @@
+//
+//  VideoQRForIpad2ViewController.m
+//  ibonAPP
+//
+//  Created by pic on 12/10/22.
+//
+//
+
+#import "VideoQRForIpad2ViewController.h"
+
+@interface VideoQRForIpad2ViewController ()
+
+@end
+
+@implementation VideoQRForIpad2ViewController
+
+@synthesize delegate;
+
+- (id)initWithNibName:(NSString *)nibNameOrNil bundle:(NSBundle *)nibBundleOrNil
+{
+    self = [super initWithNibName:nibNameOrNil bundle:nibBundleOrNil];
+    if (self) {
+        // Custom initialization
+    }
+    return self;
+}
+
+- (void)viewDidLoad
+{
+    [super viewDidLoad];
+    // Do any additional setup after loading the view from its nib.
+    
+    [self addBackButton];
+    
+    [self startNoFilterCamera];
+
+    timer = [NSTimer timerWithTimeInterval:0.1 target:self selector:@selector(timerFired:) userInfo:nil repeats:YES];
+    
+    [[NSRunLoop currentRunLoop] addTimer:timer forMode:NSDefaultRunLoopMode];
+    
+}
+
+-(void)viewWillDisappear:(BOOL)animated
+{
+    if(timer != nil)
+    {
+        [timer invalidate];
+        timer = nil;
+        [timer release];
+    }
+    
+    [videoCamera stopCameraCapture];
+    
+    [super viewWillDisappear:animated];
+}
+
+- (void)didReceiveMemoryWarning
+{
+    [super didReceiveMemoryWarning];
+    // Dispose of any resources that can be recreated.
+}
+
+-(void)dealloc
+{
+   // [self.delegate release];
+    [videoCamera release];
+    [super dealloc];
+}
+
+#pragma mark - Add Back Button
+- (void)addBackButton
+{
+    UIButton *backBtn = [[UIButton alloc] initWithFrame: CGRectMake(5, 8, 58, 35)];
+    [backBtn setImage:[UIImage imageNamed:@"back.png"] forState:UIControlStateNormal];
+    [backBtn addTarget:self
+                action:@selector(BackFromReaderbtn:)
+      forControlEvents:UIControlEventTouchUpInside];
+    
+    
+    [self.view addSubview:backBtn];
+    [backBtn release];
+}
+
+-(IBAction)BackFromReaderbtn:(id)sender
+{
+    [self dismissModalViewControllerAnimated: YES];
+}
+
+#pragma mark - GPUImage Camera
+
+- (void)startNoFilterCamera
+{
+    videoCamera = [[GPUImageVideoCamera alloc] initWithSessionPreset:AVCaptureSessionPreset640x480 cameraPosition:AVCaptureDevicePositionBack];
+    videoCamera.outputImageOrientation = UIInterfaceOrientationPortrait;
+    
+    videoCamera.runBenchmark = YES;
+    GPUImageView *filterView = (GPUImageView *)self.view;
+    
+    filterView.fillMode = kGPUImageFillModePreserveAspectRatioAndFill;
+    
+    GPUImageOutput<GPUImageInput> *filter = [[[GPUImageBrightnessFilter alloc] init] autorelease];
+    [(GPUImageBrightnessFilter *)filter setBrightness:0.5];
+    
+    [filter addTarget:filterView];
+    
+    arrayTemp = [[[NSMutableArray alloc] initWithObjects:filter, nil] autorelease];
+    
+    pipeline = [[GPUImageFilterPipeline alloc]initWithOrderedFilters:arrayTemp input:videoCamera output:(GPUImageView*)self.view];
+    
+    
+    
+    UIImage *backgroundImage = [UIImage imageNamed:@"qrcode_bg.png"];
+    UIImageView *backgroundImageView = [[UIImageView alloc] initWithImage:backgroundImage];
+    [backgroundImageView setFrame:CGRectMake(0, 0, 320, 460)];
+    [self.view addSubview:backgroundImageView];
+    [videoCamera startCameraCapture];
+    [backgroundImageView release];
+    
+}
+
+
+#pragma mark - Timer
+- (void)timerFired:(id)sender
+{
+    [self saveAndScan];
+}
+
+#pragma mark - saveAndScan
+- (void)saveAndScan
+{
+    
+    UIImage *filterImage = [pipeline currentFilteredFrame];
+
+    //  ------------------------------------
+    //  設定 filter
+    //  ------------------------------------
+    
+    
+    //  這五個濾鏡的數值是 try 出來的
+    GPUImageOutput<GPUImageInput> *filter1 = [[[GPUImageBrightnessFilter alloc] init] autorelease];
+    [(GPUImageBrightnessFilter *)filter1 setBrightness:-0.03];
+    
+    GPUImageOutput<GPUImageInput> *filter2 = [[[GPUImageContrastFilter alloc] init] autorelease];
+    [(GPUImageContrastFilter *)filter2 setContrast:3.32];
+    
+    GPUImageOutput<GPUImageInput> *filter3 = [[[GPUImageSharpenFilter alloc] init] autorelease];
+    [(GPUImageSharpenFilter *)filter3 setSharpness:1.12];
+    
+    GPUImageOutput<GPUImageInput> *filter4 = [[[GPUImageSaturationFilter alloc] init] autorelease];
+    [(GPUImageSaturationFilter *)filter4 setSaturation:1.49];
+    
+    GPUImageOutput<GPUImageInput> *filter5 = [[[GPUImageExposureFilter alloc] init] autorelease];
+    [(GPUImageExposureFilter *)filter5 setExposure:2.58];
+    
+    
+    GPUImagePicture *stillImageSource = [[GPUImagePicture alloc] initWithImage:filterImage];
+    
+    [stillImageSource addTarget:filter1];
+    [filter1 addTarget:filter2];
+    [filter2 addTarget:filter3];
+    [filter3 addTarget:filter4];
+    [filter4 addTarget:filter5];
+    
+    [stillImageSource processImage];
+    
+    filterImage = [filter5 imageFromCurrentlyProcessedOutput];
+    
+    [stillImageSource release];
+ 
+    
+    //  ------------------------------------
+    //  設定 ZBar
+    //  ------------------------------------
+    
+    
+    ZBarImageScanner *scanner = [[ZBarImageScanner alloc] init];
+    [scanner setEnableCache:NO];
+    [scanner setSymbology:0 config:ZBAR_CFG_ENABLE to:0];
+    [scanner setSymbology:ZBAR_QRCODE config:ZBAR_CFG_ENABLE to:1];
+    
+    //UIImage *picture = [info objectForKey:UIImagePickerControllerOriginalImage];
+    
+    CGImageRef cgImage = [filterImage CGImage];
+    
+    ZBarImage *qrImage = [[ZBarImage alloc] initWithCGImage:cgImage];
+    int result = [scanner scanImage:qrImage];
+    
+    
+//    NSLog(@"scan result = %d", result);
+    
+    if (result <= 0)
+    {
+        [qrImage release];
+        [scanner release];
+        return;
+    }
+    
+    ZBarSymbolSet *symbols = scanner.results;
+    
+
+    for(ZBarSymbol *symbol in symbols)
+    {
+        //NSLog(@"scan Text = %@", symbol.data);
+        /*
+        UIAlertView *alertView = [[UIAlertView alloc] initWithTitle:@""
+                                                            message:symbol.data
+                                                           delegate:self
+                                                  cancelButtonTitle:@"OK"
+                                                  otherButtonTitles:nil, nil];
+        [alertView show];
+        
+        [alertView release];
+        */
+        [timer invalidate];
+        timer = nil;
+        
+        
+        AudioServicesPlayAlertSound(kSystemSoundID_Vibrate);
+        AudioServicesPlaySystemSound(1007);
+        
+        [self BackFromReaderbtn:nil];
+        [self.delegate loadView:YES];
+        [self.delegate doQuery:symbol.data];
+        break;
+    }
+    
+    [qrImage release];
+    [scanner release];
+    
+    
+}
+
+@end
